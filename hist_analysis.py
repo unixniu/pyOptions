@@ -20,6 +20,9 @@ class History:
 
     @classmethod
     def loaddata(cls):
+        if cls.loaded:
+            return
+            
         past_contracts_lookup_df = pd.read_csv('past-50ETF-options-lookup.csv')
         past_contracts_lookup_df['exp'] = pd.to_datetime(
             past_contracts_lookup_df['expiry'], 
@@ -60,14 +63,18 @@ class History:
         return found.values[0]
 
     @classmethod
+    def is_active(cls, contract:str):
+        return ('20' + contract[7:11]) in cls.current_months
+
+    # get history daily data for given contract (e.g. 510050C2109M03000)
+    @classmethod
     def hist(cls, contractNum:str):
         cls.ensure_loaded()
         if len(contractNum) != 17:
             raise Exception('not a valid contract number.')
         
         symbol, expire = '', None
-        month = '20' + contractNum[7:11]
-        if month in cls.current_months:
+        if cls.is_active(contractNum):
             symbol, expire = cls.get_code(contractNum)
         else:
             symbol, expire = cls.past_contracts_lookup_df.loc[

@@ -1,0 +1,76 @@
+accounts:
+  - name: 'far-CallRatioSpread'
+    trades:
+      - date: 2021-03-25 
+        symbol: 510050C2109M03200
+        direction: L 
+        volume: 30
+      - date: 2021-03-25 
+        symbol: 510050C2109M03600
+        direction: S 
+        volume: 20
+      - date: 2021-03-25 
+        symbol: 510050C2109M03700
+        direction: S
+        volume: 20
+  - name: 'near-CallRatioSpread'
+    trades:
+      - name: primary
+        date: 2021-03-25 
+        symbol: 510050C2104M03200
+        direction: L 
+        volume: 30
+        closePolicy:
+          - type: pl
+            expression: '$>0.5'
+      - date: 2021-03-25
+        symbol: 510050C2104M03600
+        direction: S 
+        volume: 20
+        # closePolicy is expected to be set at position opening, 
+        # as it defines when the position should be closed.
+        closePolicy:
+          - type: pl
+            expression: '$>0.8'
+          - type: linked
+            position: 510050C2104M03200L
+            'on': close
+      - date: 2021-03-25 
+        symbol: 510050C2104M03700
+        direction: S
+        volume: 20
+        closePolicy:
+          - type: pl
+            expression: '$>0.8'
+          - type: linked
+            position: 510050C2104M03200L
+            'on': close
+  - name: relay-callspread
+    start: 2022-03-25
+    strategy:
+      name: relay
+      template:
+        - name: primary
+          symbol: C6M1
+          direction: L
+          triggers:
+            - type: price
+              expression: '$<=0.03'
+          volume: 20
+          closePolicy:
+            - type: pl
+              expression: '$>1.0'
+        - name: affliated
+          symbol: C7M1
+          direction: S
+          triggers:
+            - type: linked
+              position: primary
+              on: open
+          volume: 30
+          closePolicy:
+            - type: pl
+              expression: '$>0.8'
+            - type: linked
+              position: primary
+              on: close
