@@ -37,7 +37,8 @@ if __name__ == "__main__":
         elif playbook.endswith('yml'):  # yml playbook runs multiple accounts
             pb = Playbook(playbook)
             df = pb.run()
-            print(df)
+            #print(df)
+            df.to_csv('res.csv')
             pb.visual_multiaccounts(df)
 
 

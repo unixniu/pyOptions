@@ -1,10 +1,13 @@
 from collections import namedtuple
 from datetime import date, timedelta
+from doctest import master
+import re
 import os
 import numpy
 import pandas as pd
 import plotly.graph_objs as go
 from plotly.subplots import make_subplots
+from sympy import N
 from hist_analysis import History
 
 NUM_PER_LOT = 10000 # 1 lot of contract contains 10000 units
@@ -22,6 +25,7 @@ class Trade:
         self.date = args.get('date')
         self.closePolicy = args.get('closePolicy')
         self.triggers = args.get('triggers')
+        self.master = args.get('master')    # for trade affilicated to a master one, e.g. closetrade created implicitly after opentrade
         self.done = False
 
 # option position.
@@ -29,15 +33,19 @@ class Position:
     # symbol: contract num like '510050C2109M03000'
     # direction: L (long) or S (short)
     # exmaple: Pos('510050C2109M03000', 'L')
-    def __init__(self, symbol, direction) -> None:
+    def __init__(self, symbol, direction, username=None) -> None:
         #self.tranx = []
         self.symbol, self.direction = symbol, direction
+        self.username = username
         self.kind = symbol[6]
         self.vol, self.cost_price, self.pl = 0, 0.0, 0.0
         self.closed = False
     
-    def name(self):
+    def autoname(self):
         return self.symbol + self.direction
+
+    def name(self):
+        return self.autoname() if not self.username else self.username
 
     @classmethod
     def hist_lookup(cls, func):
@@ -52,7 +60,7 @@ class Position:
 
     @classmethod
     def Build_w_trade(cls, opening_trade:Trade, date):
-        pos = Position(opening_trade.symbol, opening_trade.direction)
+        pos = Position(opening_trade.symbol, opening_trade.direction, opening_trade.name)
         price = cls.hist_lookup(pos.symbol, date)
         pos.change(opening_trade.volume, price, date)
         opening_trade.done = True
@@ -82,6 +90,9 @@ class Position:
             self.cost_price = (self.cost_price * self.vol + delta * price) / newVol
             self.vol = newVol
         else:
+            if self.vol == 0:
+                raise Exception('try to close an empty position.')
+
             # position's final profit&loss is only available after it's closed
             self.pl = self.p_l(price)
             self.closed = True
@@ -144,6 +155,7 @@ class Account:
             #raise Exception(f'hist data missing for {symbol} on {date}')
         return hist_df.loc[date_index].to_dict()
 
+
     @classmethod
     def price(cls, symbol:str, date:date):
         data = cls.hist_data(symbol, date)
@@ -154,7 +166,12 @@ class Account:
 
     @staticmethod
     def gen_close_trade(closepolicy:list, opentrade:Trade):
-        return Trade(symbol=opentrade.symbol, direction=opentrade.direction, volume=CLOSE_POSITION_VOL, triggers=closepolicy)
+        return Trade(
+            symbol=opentrade.symbol, 
+            direction=opentrade.direction, 
+            volume=CLOSE_POSITION_VOL, 
+            triggers=closepolicy,
+            master=opentrade)
 
 
     @staticmethod
@@ -167,12 +184,75 @@ class Account:
 
 
     def execute(self, trade, date):
-        pos = self.getposition(trade)
-        if pos is None:
+        pos_name = Account.position_name(trade)
+        if pos_name not in self._posMap:
+            if not re.match(r'510050[CP]\d{4}M\d{5}', trade.symbol):
+                if not date:
+                    raise Exception('date missing for resolving dynmaic name.')
+                trade.symbol = Account.resolveContract(trade.symbol, date)
+                for tr in self.trades:
+                    if tr.master == trade:
+                        tr.symbol = trade.symbol
+
             pos = Position.Build_w_trade(trade, date)
+            # add position to map using both autoname (contract + direction) and name (user-given name or autoname)
+            self._posMap[pos.autoname()] = pos
             self._posMap[pos.name()] = pos
         else:
-            pos.execute(trade, date)
+            self._posMap[pos_name].execute(trade, date)
+
+
+    @staticmethod
+    def atm(spot_price:float):
+        x = round(spot_price, 1)
+        if x < 3.0:
+            mid = x + (0.05 if x < spot_price else -0.05)
+            return mid if abs(spot_price - x) > abs(spot_price - mid) else x
+        else: 
+            return x
+
+
+    ''' resolve a dynamic 50ETF option contract name on given date, in format {CxMy} or {PxMy}
+       - C is Call, P is Put
+       - x is in [1, 9], x=5 is at-the-money strike; x1 < x2 < x3 < x4 < x5 < x6 < x7 < x8 < x9
+       - y is in [1, 4], meaning current month, next month, next season month, next next season month
+       - passed date is used to get spot price on that day
+       e.g. resolveContract('{P9M3}', '20211220') => 510050P2203M03600, spot price on 20211220 is 3.243.
+    ''' 
+    @staticmethod
+    def resolveContract(dynamicname:str, date:date, adjust=False):
+        m = re.match(r'([CP]\dM\d)', dynamicname)
+        if not m:
+            raise Exception(f"{dynamicname} can't be resolved to a valid contract.")
+        var = m.group(1)
+        ts = pd.Timestamp(date)
+        History.loaddata()
+        if ts not in History.spot_daily_df.index:
+            raise Exception(f'spot price not found on {date}')
+        spot_price = History.spot_daily_df.at[ts, 'close']
+        type, strike_level, month_ord = var[0], int(var[1]), int(var[3])
+
+        strike = Account.atm(spot_price)
+        print(f'atm:{strike}')
+        n = strike_level - 5    # levels away from ATM
+        if n != 0:
+            direction = n / abs(n)      # move up or down the ATM strike price
+            for i in range(0, abs(n)):
+                step = 0.05 if strike < 3.0 or (strike == 3.0 and direction == -1) else 0.1
+                strike += step * direction
+                print(f'step {step} => {strike}')
+        
+        expiredate = ts     # current month
+        # when adjust flag is on, if choosing current month and it's apporaching month end move to next month
+        if (month_ord == 1 and adjust and ts.day >= 20) or month_ord == 2:
+            expiredate = ts + pd.DateOffset(months=1)   # next month
+        elif month_ord == 3 or month_ord == 4:
+            offset = pd.offsets.QuarterEnd(1 if month_ord == 3 else 2, startingMonth=3)
+            expiredate = offset.rollforward(ts) + offset    # ending month of next quarter or next next quater
+        
+        contract_code = f"510050{type}{expiredate.strftime('%y%m')}M{'{:05d}'.format(int(round(strike, 2) * 1000))}"
+        print(f"dynmaic name '{dynamicname} on {date} resolved to {contract_code}")
+        return contract_code
 
 
     def rerun(self):
@@ -206,7 +286,7 @@ class Account:
                         type, match = trigger['type'], False
                         if type == 'pl':
                             pos = self.getposition(trade)
-                            if not pos.closed:
+                            if pos and not pos.closed:
                                 data = Account.hist_data(pos.symbol, today)
                                 if data:
                                     _, pl_pct = pos.p_l(data['T'])

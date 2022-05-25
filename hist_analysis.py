@@ -37,6 +37,7 @@ class History:
 
         spot_daily_df = ak.fund_etf_hist_sina(symbol="sh510050")
         spot_daily_df['date'] = pd.to_datetime(spot_daily_df['date'])
+        spot_daily_df.set_index('date', inplace=True)
         cls.spot_daily_df = spot_daily_df
 
         cls.loaded = True
@@ -90,7 +91,7 @@ class History:
         df['date'] = pd.to_datetime(df['日期'])
         
         # merge with underlying (ETF50) daily kline
-        merged = pd.merge(df, cls.spot_daily_df, how='left', on='date')
+        merged = df.join(cls.spot_daily_df, on='date')
         merged['intrisicVal'] = merged['close'].map(lambda x: max(0, (x - k) * (1 if type == 'C' else -1)))
         merged['timeVal'] = merged['T'] - merged['intrisicVal']
         merged['tte'] = merged['date'].map(lambda x: (expire - x).days)

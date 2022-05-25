@@ -1,30 +1,30 @@
 accounts:
   - name: 'far-CallRatioSpread'
     trades:
-      - date: 2021-03-25 
-        symbol: 510050C2109M03200
+      - date: 2022-01-10 
+        symbol: C3M3
         direction: L 
         volume: 30
-      - date: 2021-03-25 
-        symbol: 510050C2109M03600
+      - date: 2022-01-10  
+        symbol: C6M3
         direction: S 
         volume: 20
-      - date: 2021-03-25 
-        symbol: 510050C2109M03700
+      - date: 2022-01-10 
+        symbol: C7M3
         direction: S
         volume: 20
   - name: 'near-CallRatioSpread'
     trades:
       - name: primary
-        date: 2021-03-25 
-        symbol: 510050C2104M03200
+        date: 2022-01-10  
+        symbol: C3M2
         direction: L 
         volume: 30
         closePolicy:
           - type: pl
             expression: '$>0.5'
-      - date: 2021-03-25
-        symbol: 510050C2104M03600
+      - date: 2022-01-10 
+        symbol: C6M2
         direction: S 
         volume: 20
         # closePolicy is expected to be set at position opening, 
@@ -33,17 +33,17 @@ accounts:
           - type: pl
             expression: '$>0.8'
           - type: linked
-            position: 510050C2104M03200L
+            position: primary
             'on': close
-      - date: 2021-03-25 
-        symbol: 510050C2104M03700
+      - date: 2022-01-10  
+        symbol: C7M2
         direction: S
         volume: 20
         closePolicy:
           - type: pl
             expression: '$>0.8'
           - type: linked
-            position: 510050C2104M03200L
+            position: primary
             'on': close
   - name: relay-callspread
     start: 2022-03-25

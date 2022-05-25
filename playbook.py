@@ -23,8 +23,7 @@ class Playbook:
                     account = Account(acc_spec)
                     account_replay_dfs.append(account.rerun())
             concated = pd.concat(account_replay_dfs, axis=1, join='outer', keys=[x['name'] for x in ymlmap['accounts']])
-            spot = History.spot_daily_df.reindex(columns=['date', 'close']).rename(columns={'close': 'spot'}, copy=False)
-            spot.set_index('date', inplace=True)
+            spot = History.spot_daily_df.reindex(columns=['close']).rename(columns={'close': 'spot'}, copy=False)
             return concated.join(spot)
 
 
